@@ -16,6 +16,9 @@ from fastapi import FastAPI, HTTPException, status
 from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel, Field
 
+from app.answer import compose_answer
+from app.embeddings import embed_text, to_pgvector
+
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/ingest"
 )
@@ -75,3 +78,33 @@ async def get_document(doc_id: uuid.UUID):
     if row is None:
         raise HTTPException(status_code=404, detail="document not found")
     return {"doc_id": str(row[0]), "filename": row[1], "status": row[2]}
+
+
+class QueryIn(BaseModel):
+    question: str = Field(min_length=1)
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+@app.post("/query")
+async def query(q: QueryIn):
+    """D11 — the read path. Synchronous by design: a question wants its
+    answer now, and there is no write to protect against silent loss, so
+    this path deliberately bypasses the outbox/stream machinery."""
+    qvec = to_pgvector(embed_text(q.question))
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT c.passage, c.doc_id, d.filename,"
+            "       1 - (c.embedding <=> %s::vector) AS similarity"
+            " FROM chunks c JOIN documents d ON d.id = c.doc_id"
+            " ORDER BY c.embedding <=> %s::vector"
+            " LIMIT %s",
+            (qvec, qvec, q.top_k),
+        )
+        rows = await cur.fetchall()
+    sources = [
+        {"passage": p, "doc_id": str(doc_id), "filename": fn,
+         "similarity": round(float(sim), 4)}
+        for p, doc_id, fn, sim in rows
+    ]
+    answer, _prompt = compose_answer(q.question, [s["passage"] for s in sources])
+    return {"question": q.question, "answer": answer, "sources": sources}

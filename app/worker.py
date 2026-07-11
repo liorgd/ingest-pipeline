@@ -6,18 +6,19 @@ DESIGN.md D3/D4/D5:
   - retries with a strike counter; on the delivery after MAX_ATTEMPTS,
     the entry moves to the dead-letter stream and the document is marked failed
 
-M-stub note: real PDF parsing and a real embedding model arrive later; here
-the "parser" splits text into passages (and treats the marker %%CORRUPT%% as
-an unparseable file), and the "embedder" is a deterministic stub.
+Stub note: real PDF parsing arrives later; the "parser" splits text into
+passages (and treats the marker %%CORRUPT%% as an unparseable file).
+Embeddings are real as of M6 — see app/embeddings.py for the backend seam.
 """
 
-import hashlib
 import json
 import os
 import time
 
 import psycopg
 import redis as redis_lib
+
+from app.embeddings import embed_text, to_pgvector
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 DATABASE_URL = os.environ.get(
@@ -70,12 +71,6 @@ def parse_passages(content: str) -> list[str]:
     return passages
 
 
-def embed(passage: str) -> list[float]:
-    """Deterministic stub embedding (a real model plugs in here later)."""
-    digest = hashlib.sha256(passage.encode()).digest()
-    return [round(b / 255, 3) for b in digest[:8]]
-
-
 def _doc_id(fields: dict) -> str | None:
     try:
         return json.loads(fields["payload"])["doc_id"]
@@ -110,8 +105,8 @@ def process_entry(conn: psycopg.Connection, r: redis_lib.Redis,
             for passage in passages:
                 conn.execute(
                     "INSERT INTO chunks (doc_id, passage, embedding)"
-                    " VALUES (%s, %s, %s)",
-                    (doc_id, passage, json.dumps(embed(passage))),
+                    " VALUES (%s, %s, %s::vector)",
+                    (doc_id, passage, to_pgvector(embed_text(passage))),
                 )
             conn.execute(
                 "UPDATE documents SET status = 'processed' WHERE id = %s", (doc_id,)

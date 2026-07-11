@@ -5,3 +5,4 @@ redis
 pytest
 httpx
 prometheus-client
+model2vec

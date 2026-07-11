@@ -1,0 +1,1 @@
+%%CORRUPT%% this file simulates an unreadable upload so the retry and dead-letter path stays demoable

@@ -19,9 +19,15 @@ consumer = effectively exactly-once processing.
 ## Run locally
 
     docker compose up --build
-    curl -X POST localhost:8000/documents \
+    python scripts/seed.py        # push the sample knowledge base
+    curl -X POST localhost:8000/query \
       -H 'content-type: application/json' \
-      -d '{"filename":"contract.pdf","content":"The parties agree..."}'
+      -d '{"question":"how do I cancel the agreement?"}'
+
+The seed corpus includes one deliberately corrupt file, so the worker logs
+and metrics also demo the retry -> dead-letter path. The star CI assertion:
+the question says *cancel*, the document says *terminate* — only genuine
+semantic search passes it.
 
 ## Milestones
 
@@ -32,6 +38,9 @@ consumer = effectively exactly-once processing.
 | M3 | Worker: consume, idempotency, chunk + embed | ✅ CI-tested |
 | M4 | Failure drills: duplicates, kills, poison → DLQ | ✅ CI-tested |
 | M5 | Observability: outbox lag, stream/DLQ depth, alerts | ✅ CI-tested |
+| M6 | Real embeddings (model2vec, swappable seam) | ✅ CI-tested |
+| M7 | Vector search: pgvector + HNSW, semantic ranking tests | ✅ CI-tested |
+| M8 | Query path: /query, grounded answers via stubbed LLM seam | ✅ CI-tested |
 
 ## The failure matrix, executed
 

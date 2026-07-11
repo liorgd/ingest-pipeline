@@ -1,4 +1,5 @@
 -- ingest-pipeline schema — "the ledger" (DESIGN.md §1)
+CREATE EXTENSION IF NOT EXISTS vector;  -- D10: meaning-search inside the ledger
 -- documents: what is true.  outbox: what must be announced.  chunks: the results.
 
 CREATE TABLE IF NOT EXISTS documents (
@@ -27,7 +28,10 @@ CREATE TABLE IF NOT EXISTS chunks (
     id          bigserial PRIMARY KEY,
     doc_id      uuid NOT NULL REFERENCES documents(id),
     passage     text NOT NULL,
-    embedding   jsonb,
+    embedding   vector(256),  -- D10: a real vector column (dim = EMBED_DIM)
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS chunks_doc ON chunks (doc_id);
+-- D10: nearest-neighbor index for "find passages whose meaning is closest".
+CREATE INDEX IF NOT EXISTS chunks_embedding ON chunks
+    USING hnsw (embedding vector_cosine_ops);

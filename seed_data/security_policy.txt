@@ -1,0 +1,1 @@
+Corporate Security Policy. All employees must enable multi-factor authentication on every corporate account. Company laptops must use full disk encryption at all times. Passwords must be at least 14 characters and must never be reused across systems. Lost or stolen devices must be reported to the security team within 4 hours.

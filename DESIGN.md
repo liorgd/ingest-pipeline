@@ -213,6 +213,58 @@ Kafka would spend the budget teaching ops rather than patterns. What would be
 revisited at Kafka scale: partitioning strategy for ordering guarantees, and
 retention for replay.
 
+### D9 — The use case: a contracts & policies knowledge base
+
+**Problem.** An ingestion pipeline without a purpose has no pusher and
+nothing worth querying.
+
+**Decision.** The system is a company knowledge base for contracts and
+policies. Who pushes documents through the front door, in production terms:
+a human with an upload form; a sync connector (a scheduled job that asks
+Drive/SharePoint/Confluence "what changed since my last visit?" and POSTs
+each new file); or an event webhook fired by the document system at the
+moment of change. All three are the same POST — and D1's burst absorption is
+exactly what lets a connector dump 500 documents at 9:00 without the
+client-facing API slowing down. In this repo the pushers are `scripts/seed.py`
+(the demo truck) and the CI tests themselves, which seed through the real API
+and thereby re-prove ingestion before every retrieval assertion.
+
+### D10 — Real embeddings and meaning-search inside the ledger
+
+**Problem.** The worker's stub embedding and the jsonb column can store
+vectors but cannot *search* them, and carry no meaning.
+
+**Decision.** Two changes. First, embeddings come from a real model behind a
+one-function seam (`app/embeddings.py`): a small static embedding model
+(model2vec "potion", 256 dims) — CPU-only and fast enough that CI runs real
+semantics; swapping to a larger sentence-transformer or an API model touches
+only that module. Second, `chunks.embedding` becomes a true `vector(256)`
+column via the pgvector extension, with an HNSW nearest-neighbor index.
+The architectural bonus: truth and vectors live in the same Postgres, so
+meaning-search adds **zero new components** to the map.
+
+**Considered alternative:** a dedicated vector database (Pinecone, Qdrant,
+Weaviate). Rejected at this scale for the same reason as D6/D7 in reverse —
+it would split the truth across two stores and reintroduce a dual-write
+surface between them, for capacity this system does not need. What would
+trigger revisiting: tens of millions of chunks or heavy filtered-search load.
+
+### D11 — The read path: synchronous by design
+
+**Problem.** The whole point of ingesting: "what does the contract say about
+payment terms?"
+
+**Decision.** `POST /query` embeds the question with the same model, asks
+pgvector for the top-k nearest passages, and composes an answer through an
+LLM seam (`app/answer.py`) that is stubbed deterministically in CI: tests
+assert on the prompt (which we control — it must contain the question and
+every retrieved passage) rather than on model prose (which we do not).
+
+The contrast worth stating: this path deliberately **bypasses** the
+outbox/stream machinery. A question wants its answer now, and there is no
+write to protect from silent loss. Same system, two paths, two promises:
+the write path promises *never lose*; the read path promises *answer fast*.
+
 ---
 
 ## 4. End-to-end flow (plain words)
@@ -296,3 +348,11 @@ docker-compose: postgres + redis + services).
    doc's failure matrix, executed.
 5. **M5 — Observability.** Prometheus counters: outbox lag, stream depth, DLQ
    depth, processing latency. Alert rule on DLQ depth.
+6. **M6 — Real embeddings.** model2vec backend behind the embedding seam;
+   CI asserts dimension and determinism.
+7. **M7 — Vector search.** pgvector column + HNSW index; CI seeds the corpus
+   through the real API and asserts semantic ranking — including the
+   "cancel finds terminate" test that keyword search cannot pass.
+8. **M8 — Query path.** `POST /query`: retrieve top-k passages, compose an
+   answer through the stubbed LLM seam; CI asserts the prompt contract and
+   that the stub answer is grounded in the retrieved passages.
