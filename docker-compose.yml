@@ -16,3 +16,17 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ingest
     ports: ["8000:8000"]
     depends_on: [postgres]
+  relay:
+    build: .
+    command: python -m app.relay
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ingest
+      REDIS_URL: redis://redis:6379/0
+    depends_on: [postgres, redis]
+  worker:
+    build: .
+    command: python -m app.worker
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ingest
+      REDIS_URL: redis://redis:6379/0
+    depends_on: [postgres, redis]

@@ -1,0 +1,19 @@
+# DESIGN.md D5: "an unread DLQ is a silent loss with better paperwork."
+# The drawer must have a reader — this rule rings the bell.
+groups:
+  - name: ingest-pipeline
+    rules:
+      - alert: DeadLetterQueueNotEmpty
+        expr: worker_dlq_depth > 0
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "Dead-letter queue has {{ $value }} quarantined entries"
+          description: "A document failed all retries. A human must open the drawer: inspect, fix, re-drive or discard."
+      - alert: OutboxLagGrowing
+        expr: relay_outbox_unpublished > 100
+        for: 10m
+        labels: {severity: warn}
+        annotations:
+          summary: "Outbox has {{ $value }} unannounced rows"
+          description: "Debt lines are piling up — the relay is down or too slow."

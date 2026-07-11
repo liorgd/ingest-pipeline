@@ -4,3 +4,4 @@ psycopg[binary,pool]
 redis
 pytest
 httpx
+prometheus-client
